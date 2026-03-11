@@ -5,6 +5,9 @@ on:
     tags:
       - "[0-9]+.*"
 
+permissions:
+  contents: write
+
 jobs:
   create-release:
     runs-on: ubuntu-22.04
@@ -12,15 +15,30 @@ jobs:
       # v4.2.2
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - uses: taiki-e/create-gh-release-action@v1
-        with:
-          # Create a draft release so we can add the changelog before publishing it
-          # so the changelog is included in the release email
-          draft: true
         env:
           # (required)
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  upload-tar-xz:
+    needs: create-release
+    runs-on: ubuntu-22.04
+    env:
+      ARCHIVE_NAME: difft-${{ github.ref_name }}-x86_64-unknown-linux-gnu.tar.xz
+      TARGET: x86_64-unknown-linux-gnu
+    steps:
+      # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: dtolnay/rust-toolchain@1.77.0
+      - run: cargo build --locked --release --target "$TARGET"
+      - name: Package tar.xz archive
+        run: tar -C "target/$TARGET/release" -cJf "$ARCHIVE_NAME" difft
+      - name: Upload tar.xz archive
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" "$ARCHIVE_NAME" --clobber
+
   upload-assets:
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
@@ -61,6 +79,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   push_crates_io:
+    needs:
+      - upload-tar-xz
+      - upload-assets
     runs-on: ubuntu-22.04
     steps:
       # v4.2.2
