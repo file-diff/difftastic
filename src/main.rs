@@ -338,6 +338,7 @@ fn main() {
                             let (send, recv) = std::sync::mpsc::sync_channel(1);
 
                             s.spawn(move || {
+                                #[allow(clippy::result_large_err)]
                                 diff_iter
                                     .try_for_each_with(send, |s, diff_result| s.send(diff_result))
                                     .expect("Receiver should be connected")
