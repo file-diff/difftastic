@@ -796,11 +796,6 @@ pub(crate) fn parse_args() -> Mode {
         "side-by-side-show-both" => DisplayMode::SideBySideShowBoth,
         "inline" => DisplayMode::Inline,
         "json" => {
-            if env::var("DFT_UNSTABLE").is_err() {
-                eprintln!("JSON output is an unstable feature and its format may change in future. To enable JSON output, set the environment variable DFT_UNSTABLE=yes.");
-                std::process::exit(EXIT_BAD_ARGUMENTS);
-            }
-
             DisplayMode::Json
         }
         _ => {
