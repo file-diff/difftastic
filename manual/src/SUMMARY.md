@@ -9,6 +9,7 @@
   - [Mercurial](./mercurial.md)
   - [Fossil](./fossil.md)
   - [Jujutsu](./jj.md)
+  - [JSON Output](./json_output.md)
 - [Languages Supported](./languages_supported.md)
   - [Language Detection](./language_detection.md)
 - [Internals: Parsing](./parsing.md)

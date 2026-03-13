@@ -81,6 +81,12 @@ OPTIONS:
 ...
 ```
 
+## JSON Output
+
+Use `--display=json` for machine-readable output. See the
+[JSON Output](./json_output.html) page for the output format and an
+example.
+
 ## Exit Codes
 
 2: Difftastic was given invalid arguments. This includes invalid usage
