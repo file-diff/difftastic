@@ -798,9 +798,7 @@ pub(crate) fn parse_args() -> Mode {
         "side-by-side" => DisplayMode::SideBySide,
         "side-by-side-show-both" => DisplayMode::SideBySideShowBoth,
         "inline" => DisplayMode::Inline,
-        "json" => {
-            DisplayMode::Json
-        }
+        "json" => DisplayMode::Json,
         _ => {
             unreachable!("clap has already validated display")
         }

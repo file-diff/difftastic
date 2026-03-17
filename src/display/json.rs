@@ -25,7 +25,7 @@ struct File<'f> {
     language: &'f FileFormat,
     path: &'f str,
     aligned_lines: Vec<(Option<u32>, Option<u32>)>,
-    chunks: Vec<Vec<Line<'f>>>,
+    chunks: Vec<Vec<Line>>,
     status: Status,
 }
 
@@ -34,7 +34,7 @@ impl<'f> File<'f> {
         language: &'f FileFormat,
         path: &'f str,
         aligned_lines: Vec<(Option<u32>, Option<u32>)>,
-        chunks: Vec<Vec<Line<'f>>>,
+        chunks: Vec<Vec<Line>>,
     ) -> Self {
         File {
             language,
@@ -144,7 +144,6 @@ impl<'f> From<&'f DiffResult> for File<'f> {
                             add_changes_to_side(
                                 line.lhs.as_mut().unwrap(),
                                 *line_num,
-                                &lhs_lines,
                                 &summary.lhs_positions,
                             );
                         }
@@ -152,7 +151,6 @@ impl<'f> From<&'f DiffResult> for File<'f> {
                             add_changes_to_side(
                                 line.rhs.as_mut().unwrap(),
                                 *line_num,
-                                &rhs_lines,
                                 &summary.rhs_positions,
                             );
                         }
@@ -212,14 +210,14 @@ impl Serialize for File<'_> {
 }
 
 #[derive(Debug, Serialize)]
-struct Line<'l> {
+struct Line {
     #[serde(skip_serializing_if = "Option::is_none")]
-    lhs: Option<Side<'l>>,
+    lhs: Option<Side>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    rhs: Option<Side<'l>>,
+    rhs: Option<Side>,
 }
 
-impl<'l> Line<'l> {
+impl Line {
     fn new(lhs_number: Option<u32>, rhs_number: Option<u32>) -> Self {
         Line {
             lhs: lhs_number.map(Side::new),
@@ -229,12 +227,12 @@ impl<'l> Line<'l> {
 }
 
 #[derive(Debug, Serialize)]
-struct Side<'s> {
+struct Side {
     line_number: u32,
-    changes: Vec<Change<'s>>,
+    changes: Vec<Change>,
 }
 
-impl<'s> Side<'s> {
+impl Side {
     fn new(line_number: u32) -> Self {
         Side {
             line_number,
@@ -244,10 +242,9 @@ impl<'s> Side<'s> {
 }
 
 #[derive(Debug, Serialize)]
-struct Change<'c> {
+struct Change {
     start: u32,
     end: u32,
-    content: &'c str,
     highlight: Highlight,
 }
 
@@ -312,20 +309,14 @@ pub(crate) fn print(diff: &DiffResult) {
     )
 }
 
-fn add_changes_to_side<'s>(
-    side: &mut Side<'s>,
-    line_num: LineNumber,
-    src_lines: &[&'s str],
-    all_matches: &[MatchedPos],
-) {
-    let src_line = src_lines[line_num.0 as usize];
+fn add_changes_to_side(side: &mut Side, line_num: LineNumber, all_matches: &[MatchedPos]) {
+    //let src_line = src_lines[line_num.0 as usize];
 
     let matches = matches_for_line(all_matches, line_num);
     for m in matches {
         side.changes.push(Change {
             start: m.pos.start_col,
             end: m.pos.end_col,
-            content: &src_line[(m.pos.start_col as usize)..(m.pos.end_col as usize)],
             highlight: Highlight::from_match(&m.kind),
         })
     }
