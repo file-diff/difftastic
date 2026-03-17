@@ -10,7 +10,7 @@ use crate::display::context::all_matched_lines_filled;
 use crate::display::hunks::{matched_lines_indexes_for_hunk, Hunk};
 use crate::display::style::{
     self, apply_colors, apply_line_number_color, color_positions, novel_style, replace_tabs,
-    split_and_apply, BackgroundColor,
+    split_and_apply, width_respecting_tabs, BackgroundColor,
 };
 use crate::hash::{DftHashMap, DftHashSet};
 use crate::lines::{format_line_num, split_on_newlines};
@@ -205,7 +205,9 @@ impl SourceDimensions {
         //
         // This naively assumes that byte length is the same as
         // display length, which is generally OK because byte length
-        // will tend to be larger than the display length.
+        // will tend to be larger than the display length. Tab
+        // characters are an exception, where display width exceeds
+        // byte length, so we account for tab expansion explicitly.
         let width_without_truncation = lhs_line_nums_width
             + content_max_width
             + SPACER.len()
@@ -340,11 +342,12 @@ fn highlight_as_novel(
 
 /// Find the longest line in `lhs_src` and `rhs_src` that will be
 /// displayed. Return the length of that line for both LHS and RHS.
-fn visible_content_max_len_in_bytes(
+fn visible_content_max_display_width(
     lhs_src: &str,
     rhs_src: &str,
     hunks: &[Hunk],
     num_context_lines: u32,
+    tab_width: usize,
 ) -> (usize, usize) {
     let mut lhs_displayed_lines: DftHashSet<usize> = DftHashSet::default();
     let mut rhs_displayed_lines: DftHashSet<usize> = DftHashSet::default();
@@ -409,12 +412,18 @@ fn visible_content_max_len_in_bytes(
 
     for (lhs_i, lhs_line) in lhs_src.lines().enumerate() {
         if lhs_displayed_lines.contains(&lhs_i) {
-            lhs_content_max_width = max(lhs_content_max_width, lhs_line.len());
+            lhs_content_max_width = max(
+                lhs_content_max_width,
+                width_respecting_tabs(lhs_line, tab_width),
+            );
         }
     }
     for (rhs_i, rhs_line) in rhs_src.lines().enumerate() {
         if rhs_displayed_lines.contains(&rhs_i) {
-            rhs_content_max_width = max(rhs_content_max_width, rhs_line.len());
+            rhs_content_max_width = max(
+                rhs_content_max_width,
+                width_respecting_tabs(rhs_line, tab_width),
+            );
         }
     }
 
@@ -432,11 +441,12 @@ pub(crate) fn print(
     lhs_mps: &[MatchedPos],
     rhs_mps: &[MatchedPos],
 ) {
-    let (lhs_content_max_width, rhs_content_max_width) = visible_content_max_len_in_bytes(
+    let (lhs_content_max_width, rhs_content_max_width) = visible_content_max_display_width(
         lhs_src,
         rhs_src,
         hunks,
         display_options.num_context_lines,
+        display_options.tab_width,
     );
 
     let (lhs_colored_lines, rhs_colored_lines) = if display_options.use_color {

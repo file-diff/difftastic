@@ -1,8 +1,20 @@
-## 0.68 (unreleased)
+## 0.69 (unreleased)
 
 ### Parsing
 
-Updated C, Lua, Perl and Swift parsers.
+Improved string interpolation handling in Scala.
+
+## 0.68 (released 16th March 2026)
+
+### Git Support
+
+Fixed an issue where git with difftastic would terminate with `fatal:
+external diff died` when there was an unmerged path.
+
+### Parsing
+
+Updated Bash, C, Go, Lua, Nix, Perl, Python, Rust, Scala, Swift and
+YAML parsers.
 
 Fixed an issue with parsing raw string literals in Rust.
 
@@ -22,6 +34,8 @@ arguments.
 
 Fixed an issue with inline display where it didn't always respect the
 value of --context.
+
+Fixed an issue with side-by-side rendering when files contain tabs.
 
 ## 0.67 (released 16 November 2025)
 
