@@ -127,11 +127,14 @@ impl<'f> From<&'f DiffResult> for File<'f> {
                     let aligned_lines = &matched_lines[start_i..end_i];
                     matched_lines = &matched_lines[start_i..];
 
-                    for &(lhs_line_num, rhs_line_num) in aligned_lines.iter().filter(|(lhs, rhs)| {
-                        let has_changes = lhs_lines_with_novel.contains(&lhs.unwrap_or(LineNumber(0)))
-                            || rhs_lines_with_novel.contains(&rhs.unwrap_or(LineNumber(0)));
-                        has_changes && lhs.is_some() && rhs.is_some()
-                    }) {
+                    for &(lhs_line_num, rhs_line_num) in
+                        aligned_lines.iter().filter(|(lhs, rhs)| {
+                            let has_changes = lhs_lines_with_novel
+                                .contains(&lhs.unwrap_or(LineNumber(0)))
+                                || rhs_lines_with_novel.contains(&rhs.unwrap_or(LineNumber(0)));
+                            has_changes && lhs.is_some() && rhs.is_some()
+                        })
+                    {
                         let (lhs_num, rhs_num) = match (lhs_line_num, rhs_line_num) {
                             (Some(lhs_num), Some(rhs_num)) => (lhs_num, rhs_num),
                             _ => continue,
