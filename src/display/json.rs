@@ -263,7 +263,7 @@ enum Highlight {
 
 impl Highlight {
     fn from_match(kind: &syntax::MatchKind) -> Self {
-        use syntax::{MatchKind};
+        use syntax::MatchKind;
 
         match kind {
             MatchKind::Ignored { .. } => Highlight::Ignored,
@@ -311,7 +311,11 @@ fn add_changes_to_side(side: &mut Side, line_num: LineNumber, all_matches: &[Mat
         }
 
         // Otherwise, add it as a new distinct change
-        side.changes.push(Change { start, end, highlight });
+        side.changes.push(Change {
+            start,
+            end,
+            highlight,
+        });
     }
 }
 
