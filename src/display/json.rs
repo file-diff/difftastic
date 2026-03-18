@@ -1,3 +1,4 @@
+use std::cmp::PartialEq;
 use std::collections::BTreeMap;
 
 use line_numbers::LineNumber;
@@ -8,7 +9,7 @@ use crate::display::context::{all_matched_lines_filled, opposite_positions};
 use crate::display::hunks::{matched_lines_indexes_for_hunk, matched_pos_to_hunks, merge_adjacent};
 use crate::display::side_by_side::lines_with_novel;
 use crate::lines::MaxLine;
-use crate::parse::syntax::{self, MatchedPos, StringKind};
+use crate::parse::syntax::{self, MatchedPos};
 use crate::summary::{DiffResult, FileContent, FileFormat};
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -241,50 +242,35 @@ impl Side {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Copy, Clone)]
 struct Change {
     start: u32,
     end: u32,
     highlight: Highlight,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 // TODO: use syntax::TokenKind and syntax::AtomKind instead of this merged enum,
 // blocked by https://github.com/serde-rs/serde/issues/1402
 enum Highlight {
-    Delimiter,
-    Normal,
-    String,
-    Type,
-    Comment,
-    Keyword,
-    TreeSitterError,
+    Ignored,
+    Unchanged,
+    Novel,
+    NovelWord,
+    NovelUnchanged,
 }
 
 impl Highlight {
     fn from_match(kind: &syntax::MatchKind) -> Self {
-        use syntax::{AtomKind, MatchKind, TokenKind};
+        use syntax::{MatchKind};
 
-        let highlight = match kind {
-            MatchKind::Ignored { highlight, .. } => highlight,
-            MatchKind::UnchangedToken { highlight, .. } => highlight,
-            MatchKind::Novel { highlight, .. } => highlight,
-            MatchKind::NovelWord { highlight, .. } => highlight,
-            MatchKind::UnchangedPartOfNovelItem { highlight, .. } => highlight,
-        };
-
-        match highlight {
-            TokenKind::Delimiter => Self::Delimiter,
-            TokenKind::Atom(atom) => match atom {
-                AtomKind::String(StringKind::StringLiteral) => Self::String,
-                AtomKind::String(StringKind::Text) => Self::Normal,
-                AtomKind::Keyword => Self::Keyword,
-                AtomKind::Comment => Self::Comment,
-                AtomKind::Type => Self::Type,
-                AtomKind::Normal => Self::Normal,
-                AtomKind::TreeSitterError => Self::TreeSitterError,
-            },
+        match kind {
+            MatchKind::Ignored { .. } => Highlight::Ignored,
+            MatchKind::UnchangedToken { .. } => Highlight::Unchanged,
+            MatchKind::Novel { .. } => Highlight::Novel,
+            MatchKind::NovelWord { .. } => Highlight::NovelWord,
+            MatchKind::UnchangedPartOfNovelItem { .. } => Highlight::NovelUnchanged,
         }
     }
 }
@@ -305,20 +291,27 @@ pub(crate) fn print(diff: &DiffResult) {
     let file = File::from(diff);
     println!(
         "{}",
-        serde_json::to_string(&file).expect("failed to serialize file")
+        serde_json::to_string_pretty(&file).expect("failed to serialize file")
     )
 }
 
 fn add_changes_to_side(side: &mut Side, line_num: LineNumber, all_matches: &[MatchedPos]) {
-    //let src_line = src_lines[line_num.0 as usize];
+    for m in matches_for_line(all_matches, line_num) {
+        let highlight = Highlight::from_match(&m.kind);
+        let start = m.pos.start_col;
+        let end = m.pos.end_col;
 
-    let matches = matches_for_line(all_matches, line_num);
-    for m in matches {
-        side.changes.push(Change {
-            start: m.pos.start_col,
-            end: m.pos.end_col,
-            highlight: Highlight::from_match(&m.kind),
-        })
+        // Check the last change pushed to the side. If it's adjacent/overlapping
+        // and shares the same highlight, extend it instead of pushing a new one.
+        if let Some(last) = side.changes.last_mut() {
+            if last.highlight == highlight && start <= last.end {
+                last.end = last.end.max(end);
+                continue;
+            }
+        }
+
+        // Otherwise, add it as a new distinct change
+        side.changes.push(Change { start, end, highlight });
     }
 }
 

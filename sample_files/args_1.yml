@@ -1,0 +1,3 @@
+with:
+  command: test
+  args: -p fund --feat test
