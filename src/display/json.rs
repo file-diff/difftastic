@@ -127,37 +127,30 @@ impl<'f> From<&'f DiffResult> for File<'f> {
                     let aligned_lines = &matched_lines[start_i..end_i];
                     matched_lines = &matched_lines[start_i..];
 
-                    for (lhs_line_num, rhs_line_num) in aligned_lines {
-                        if !lhs_lines_with_novel.contains(&lhs_line_num.unwrap_or(LineNumber(0)))
-                            && !rhs_lines_with_novel
-                                .contains(&rhs_line_num.unwrap_or(LineNumber(0)))
-                        {
-                            continue;
-                        }
+                    for &(lhs_line_num, rhs_line_num) in aligned_lines.iter().filter(|(lhs, rhs)| {
+                        let has_changes = lhs_lines_with_novel.contains(&lhs.unwrap_or(LineNumber(0)))
+                            || rhs_lines_with_novel.contains(&rhs.unwrap_or(LineNumber(0)));
+                        has_changes && lhs.is_some() && rhs.is_some()
+                    }) {
+                        let (lhs_num, rhs_num) = match (lhs_line_num, rhs_line_num) {
+                            (Some(lhs_num), Some(rhs_num)) => (lhs_num, rhs_num),
+                            _ => continue,
+                        };
 
-                        if lhs_line_num.map(|l| l.0).is_some() && rhs_line_num.map(|l| l.0).is_some() {
-
-                        } else {
-                            continue;
-                        }
                         let line = lines
-                            .entry((lhs_line_num.map(|l| l.0), rhs_line_num.map(|l| l.0)))
-                            .or_insert_with(|| {
-                                Line::new(lhs_line_num.map(|l| l.0), rhs_line_num.map(|l| l.0))
-                            });
+                            .entry((Some(lhs_num.0), Some(rhs_num.0)))
+                            .or_insert_with(|| Line::new(Some(lhs_num.0), Some(rhs_num.0)));
 
-                        if let (Some(lhs_num), Some(rhs_num)) = (lhs_line_num, rhs_line_num) {
-                            add_changes_to_side(
-                                line.lhs.as_mut().unwrap(),
-                                *lhs_num,
-                                &summary.lhs_positions,
-                            );
-                            add_changes_to_side(
-                                line.rhs.as_mut().unwrap(),
-                                *rhs_num,
-                                &summary.rhs_positions,
-                            );
-                        }
+                        add_changes_to_side(
+                            line.lhs.as_mut().unwrap(),
+                            lhs_num,
+                            &summary.lhs_positions,
+                        );
+                        add_changes_to_side(
+                            line.rhs.as_mut().unwrap(),
+                            rhs_num,
+                            &summary.rhs_positions,
+                        );
                     }
                     chunks.push(lines.into_values().collect());
                 }
