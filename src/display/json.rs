@@ -135,28 +135,30 @@ impl<'f> From<&'f DiffResult> for File<'f> {
                             continue;
                         }
 
+                        if lhs_line_num.map(|l| l.0).is_some() && rhs_line_num.map(|l| l.0).is_some() {
+
+                        } else {
+                            continue;
+                        }
                         let line = lines
                             .entry((lhs_line_num.map(|l| l.0), rhs_line_num.map(|l| l.0)))
                             .or_insert_with(|| {
                                 Line::new(lhs_line_num.map(|l| l.0), rhs_line_num.map(|l| l.0))
                             });
 
-                        if let Some(line_num) = lhs_line_num {
+                        if let (Some(lhs_num), Some(rhs_num)) = (lhs_line_num, rhs_line_num) {
                             add_changes_to_side(
                                 line.lhs.as_mut().unwrap(),
-                                *line_num,
+                                *lhs_num,
                                 &summary.lhs_positions,
                             );
-                        }
-                        if let Some(line_num) = rhs_line_num {
                             add_changes_to_side(
                                 line.rhs.as_mut().unwrap(),
-                                *line_num,
+                                *rhs_num,
                                 &summary.rhs_positions,
                             );
                         }
                     }
-
                     chunks.push(lines.into_values().collect());
                 }
 
