@@ -2,6 +2,7 @@ use std::process::Command;
 
 use assert_cmd::prelude::*;
 use predicates::prelude::*;
+use serde_json::Value;
 
 fn find_runner() -> Option<String> {
     for (key, value) in std::env::vars() {
@@ -290,4 +291,37 @@ fn git_unmerged_files() {
 
     let predicate_fn = predicate::str::contains("Unmerged path");
     cmd.assert().stdout(predicate_fn);
+}
+
+#[test]
+fn json_output_only_includes_changed_matched_lines() {
+    let output = get_base_command()
+        .args([
+            "--display=json",
+            "sample_files/simple_1.js",
+            "sample_files/simple_2.js",
+        ])
+        .output()
+        .expect("failed to run difft");
+
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be valid UTF-8");
+    let json: Value = serde_json::from_str(&stdout).expect("stdout should be valid JSON");
+
+    let chunks = json["chunks"]
+        .as_array()
+        .expect("chunks should be an array");
+    assert_eq!(chunks.len(), 1);
+
+    let lines = chunks[0]
+        .as_array()
+        .expect("chunk should be an array of lines");
+    assert_eq!(
+        lines.len(),
+        1,
+        "only changed matched lines should be emitted"
+    );
+    assert_eq!(lines[0]["lhs"]["line_number"], 0);
+    assert_eq!(lines[0]["rhs"]["line_number"], 0);
 }

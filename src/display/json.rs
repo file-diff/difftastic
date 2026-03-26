@@ -1,3 +1,4 @@
+use std::cmp::PartialEq;
 use std::collections::BTreeMap;
 
 use line_numbers::LineNumber;
@@ -8,7 +9,7 @@ use crate::display::context::{all_matched_lines_filled, opposite_positions};
 use crate::display::hunks::{matched_lines_indexes_for_hunk, matched_pos_to_hunks, merge_adjacent};
 use crate::display::side_by_side::lines_with_novel;
 use crate::lines::MaxLine;
-use crate::parse::syntax::{self, MatchedPos, StringKind};
+use crate::parse::syntax::{self, MatchedPos};
 use crate::summary::{DiffResult, FileContent, FileFormat};
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -25,7 +26,7 @@ struct File<'f> {
     language: &'f FileFormat,
     path: &'f str,
     aligned_lines: Vec<(Option<u32>, Option<u32>)>,
-    chunks: Vec<Vec<Line<'f>>>,
+    chunks: Vec<Vec<Line>>,
     status: Status,
 }
 
@@ -34,7 +35,7 @@ impl<'f> File<'f> {
         language: &'f FileFormat,
         path: &'f str,
         aligned_lines: Vec<(Option<u32>, Option<u32>)>,
-        chunks: Vec<Vec<Line<'f>>>,
+        chunks: Vec<Vec<Line>>,
     ) -> Self {
         File {
             language,
@@ -126,38 +127,34 @@ impl<'f> From<&'f DiffResult> for File<'f> {
                     let aligned_lines = &matched_lines[start_i..end_i];
                     matched_lines = &matched_lines[start_i..];
 
-                    for (lhs_line_num, rhs_line_num) in aligned_lines {
-                        if !lhs_lines_with_novel.contains(&lhs_line_num.unwrap_or(LineNumber(0)))
-                            && !rhs_lines_with_novel
-                                .contains(&rhs_line_num.unwrap_or(LineNumber(0)))
-                        {
-                            continue;
-                        }
+                    for &(lhs_line_num, rhs_line_num) in
+                        aligned_lines.iter().filter(|(lhs, rhs)| {
+                            let has_changes = lhs_lines_with_novel
+                                .contains(&lhs.unwrap_or(LineNumber(0)))
+                                || rhs_lines_with_novel.contains(&rhs.unwrap_or(LineNumber(0)));
+                            has_changes && lhs.is_some() && rhs.is_some()
+                        })
+                    {
+                        let (lhs_num, rhs_num) = match (lhs_line_num, rhs_line_num) {
+                            (Some(lhs_num), Some(rhs_num)) => (lhs_num, rhs_num),
+                            _ => continue,
+                        };
 
                         let line = lines
-                            .entry((lhs_line_num.map(|l| l.0), rhs_line_num.map(|l| l.0)))
-                            .or_insert_with(|| {
-                                Line::new(lhs_line_num.map(|l| l.0), rhs_line_num.map(|l| l.0))
-                            });
+                            .entry((Some(lhs_num.0), Some(rhs_num.0)))
+                            .or_insert_with(|| Line::new(Some(lhs_num.0), Some(rhs_num.0)));
 
-                        if let Some(line_num) = lhs_line_num {
-                            add_changes_to_side(
-                                line.lhs.as_mut().unwrap(),
-                                *line_num,
-                                &lhs_lines,
-                                &summary.lhs_positions,
-                            );
-                        }
-                        if let Some(line_num) = rhs_line_num {
-                            add_changes_to_side(
-                                line.rhs.as_mut().unwrap(),
-                                *line_num,
-                                &rhs_lines,
-                                &summary.rhs_positions,
-                            );
-                        }
+                        add_changes_to_side(
+                            line.lhs.as_mut().unwrap(),
+                            lhs_num,
+                            &summary.lhs_positions,
+                        );
+                        add_changes_to_side(
+                            line.rhs.as_mut().unwrap(),
+                            rhs_num,
+                            &summary.rhs_positions,
+                        );
                     }
-
                     chunks.push(lines.into_values().collect());
                 }
 
@@ -212,14 +209,14 @@ impl Serialize for File<'_> {
 }
 
 #[derive(Debug, Serialize)]
-struct Line<'l> {
+struct Line {
     #[serde(skip_serializing_if = "Option::is_none")]
-    lhs: Option<Side<'l>>,
+    lhs: Option<Side>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    rhs: Option<Side<'l>>,
+    rhs: Option<Side>,
 }
 
-impl<'l> Line<'l> {
+impl Line {
     fn new(lhs_number: Option<u32>, rhs_number: Option<u32>) -> Self {
         Line {
             lhs: lhs_number.map(Side::new),
@@ -229,12 +226,12 @@ impl<'l> Line<'l> {
 }
 
 #[derive(Debug, Serialize)]
-struct Side<'s> {
+struct Side {
     line_number: u32,
-    changes: Vec<Change<'s>>,
+    changes: Vec<Change>,
 }
 
-impl<'s> Side<'s> {
+impl Side {
     fn new(line_number: u32) -> Self {
         Side {
             line_number,
@@ -243,51 +240,35 @@ impl<'s> Side<'s> {
     }
 }
 
-#[derive(Debug, Serialize)]
-struct Change<'c> {
+#[derive(Debug, Serialize, Copy, Clone)]
+struct Change {
     start: u32,
     end: u32,
-    content: &'c str,
     highlight: Highlight,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 // TODO: use syntax::TokenKind and syntax::AtomKind instead of this merged enum,
 // blocked by https://github.com/serde-rs/serde/issues/1402
 enum Highlight {
-    Delimiter,
-    Normal,
-    String,
-    Type,
-    Comment,
-    Keyword,
-    TreeSitterError,
+    Ignored,
+    Unchanged,
+    Novel,
+    NovelWord,
+    NovelUnchanged,
 }
 
 impl Highlight {
     fn from_match(kind: &syntax::MatchKind) -> Self {
-        use syntax::{AtomKind, MatchKind, TokenKind};
+        use syntax::MatchKind;
 
-        let highlight = match kind {
-            MatchKind::Ignored { highlight, .. } => highlight,
-            MatchKind::UnchangedToken { highlight, .. } => highlight,
-            MatchKind::Novel { highlight, .. } => highlight,
-            MatchKind::NovelWord { highlight, .. } => highlight,
-            MatchKind::UnchangedPartOfNovelItem { highlight, .. } => highlight,
-        };
-
-        match highlight {
-            TokenKind::Delimiter => Self::Delimiter,
-            TokenKind::Atom(atom) => match atom {
-                AtomKind::String(StringKind::StringLiteral) => Self::String,
-                AtomKind::String(StringKind::Text) => Self::Normal,
-                AtomKind::Keyword => Self::Keyword,
-                AtomKind::Comment => Self::Comment,
-                AtomKind::Type => Self::Type,
-                AtomKind::Normal => Self::Normal,
-                AtomKind::TreeSitterError => Self::TreeSitterError,
-            },
+        match kind {
+            MatchKind::Ignored { .. } => Highlight::Ignored,
+            MatchKind::UnchangedToken { .. } => Highlight::Unchanged,
+            MatchKind::Novel { .. } => Highlight::Novel,
+            MatchKind::NovelWord { .. } => Highlight::NovelWord,
+            MatchKind::UnchangedPartOfNovelItem { .. } => Highlight::NovelUnchanged,
         }
     }
 }
@@ -308,26 +289,31 @@ pub(crate) fn print(diff: &DiffResult) {
     let file = File::from(diff);
     println!(
         "{}",
-        serde_json::to_string(&file).expect("failed to serialize file")
+        serde_json::to_string_pretty(&file).expect("failed to serialize file")
     )
 }
 
-fn add_changes_to_side<'s>(
-    side: &mut Side<'s>,
-    line_num: LineNumber,
-    src_lines: &[&'s str],
-    all_matches: &[MatchedPos],
-) {
-    let src_line = src_lines[line_num.0 as usize];
+fn add_changes_to_side(side: &mut Side, line_num: LineNumber, all_matches: &[MatchedPos]) {
+    for m in matches_for_line(all_matches, line_num) {
+        let highlight = Highlight::from_match(&m.kind);
+        let start = m.pos.start_col;
+        let end = m.pos.end_col;
 
-    let matches = matches_for_line(all_matches, line_num);
-    for m in matches {
+        // Check the last change pushed to the side. If it's adjacent/overlapping
+        // and shares the same highlight, extend it instead of pushing a new one.
+        if let Some(last) = side.changes.last_mut() {
+            if last.highlight == highlight && start <= last.end {
+                last.end = last.end.max(end);
+                continue;
+            }
+        }
+
+        // Otherwise, add it as a new distinct change
         side.changes.push(Change {
-            start: m.pos.start_col,
-            end: m.pos.end_col,
-            content: &src_line[(m.pos.start_col as usize)..(m.pos.end_col as usize)],
-            highlight: Highlight::from_match(&m.kind),
-        })
+            start,
+            end,
+            highlight,
+        });
     }
 }
 
